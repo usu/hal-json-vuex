@@ -1,5 +1,9 @@
-import CanHaveItems from './CanHaveItems.js'
-import LoadingStoreCollection from './LoadingStoreCollection'
+import CanHaveItems from './CanHaveItems'
+// import LoadingStoreCollection from './LoadingStoreCollection'
+import Resource, { EmbeddedCollectionType } from './interfaces/Resource'
+import ApiActions from './interfaces/ApiActions'
+import { InternalConfig } from './interfaces/Config'
+import StoreData, { Link } from './interfaces/StoreData'
 
 /**
  * Imitates a full standalone collection with an items property, even if there is no separate URI (as it
@@ -12,23 +16,36 @@ import LoadingStoreCollection from './LoadingStoreCollection'
  * @param reloadProperty property in the containing entity under which the embedded collection is saved
  * @param loadPromise    a promise that will resolve when the parent entity has finished (re-)loading
  */
-class EmbeddedCollection extends CanHaveItems {
-  constructor (items, reloadUri, reloadProperty, { get, reload, isUnknown }, config, loadPromise = null) {
-    super({ get, reload, isUnknown }, config)
-    this._meta = {
-      load: loadPromise
-        ? loadPromise.then(loadedParent => new EmbeddedCollection(loadedParent[reloadProperty], reloadUri, reloadProperty, { get, reload, isUnknown }, config))
-        : Promise.resolve(this),
-      reload: { uri: reloadUri, property: reloadProperty }
+class EmbeddedCollection extends CanHaveItems implements EmbeddedCollectionType {
+  public _meta: {
+    load: Promise<EmbeddedCollectionType>,
+    reload: { // TODO: do we want/need to expose this externally? or sufficient if we keep this in the store and expose $reload()?
+      uri: string,
+      property: string
     }
-    this.addItemsGetter(items, reloadUri, reloadProperty)
   }
 
-  $loadItems () {
+  constructor (items: Array<Link>, reloadUri: string, reloadProperty: string, apiActions: ApiActions, config: InternalConfig, loadParent: Promise<StoreData> | null = null) {
+    super(apiActions, config, items, reloadUri, reloadProperty)
+
+    this._meta = {
+      load: loadParent
+        ? loadParent.then(parentResource => new EmbeddedCollection(parentResource[reloadProperty], reloadUri, reloadProperty, apiActions, config))
+        : Promise.resolve(this),
+      reload: {
+        uri: reloadUri,
+        property: reloadProperty
+      }
+    }
+  }
+
+  $loadItems () :Promise<Array<Resource>> {
     return new Promise((resolve) => {
       const items = this.items
-      if (items instanceof LoadingStoreCollection) items._meta.load.then(result => resolve(result))
-      else resolve(items)
+      // TODO: this is probably broken as LoadingStoreCollection has no constructor anymore
+      // if (items instanceof LoadingStoreCollection) items._meta.load.then(result => resolve(result))
+      // else resolve(items)
+      resolve(items)
     })
   }
 }

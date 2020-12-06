@@ -1,4 +1,6 @@
 import LoadingStoreCollection from './LoadingStoreCollection'
+import Resource from './interfaces/Resource'
+import { QueryablePromise, wrapPromise } from './QueryablePromise'
 
 /**
  * Creates a placeholder for an entity which has not yet finished loading from the API.
@@ -17,53 +19,84 @@ import LoadingStoreCollection from './LoadingStoreCollection'
  * @param absoluteSelf optional fully qualified URI of the entity being loaded, if available. If passed, the
  *                     returned LoadingStoreValue will return it in calls to .self and ._meta.self
  */
-class LoadingStoreValue {
-  constructor (entityLoaded, absoluteSelf = null) {
+class LoadingStoreValue implements Resource {
+  public _meta: {
+    self: string | null,
+    load: QueryablePromise<Resource>
+    loading: boolean
+  }
+
+  private loadResourceSafely: Promise<Resource>
+
+  constructor (entityLoaded: Promise<Resource>, absoluteSelf: string | null = null) {
+    this._meta = {
+      self: absoluteSelf,
+      load: wrapPromise(entityLoaded),
+      loading: true
+    }
+
+    // safe load: if API call fails, suppress errors and present this Proxy again to the chain
+    const loadResourceSafely = entityLoaded.catch(() => this)
+    this.loadResourceSafely = loadResourceSafely
+
     const handler = {
-      get: function (target, prop, _) {
+      get: function (target: LoadingStoreValue, prop: string | number | symbol) {
+        // TODO docu: Why is this neede?
         if (prop === Symbol.toPrimitive) {
           return () => ''
         }
-        if (['then', 'toJSON', Symbol.toStringTag, 'state', 'getters', '$options', '_isVue', '__file', 'render', 'constructor'].includes(prop)) {
-          // This is necessary so that Vue's reactivity system understands to treat this LoadingStoreValue
-          // like a normal object.
+
+        // This is necessary so that Vue's reactivity system understands to treat this LoadingStoreValue
+        // like a normal object.
+        if (['then', 'toJSON', Symbol.toStringTag, 'state', 'getters', '$options', '_isVue', '__file', 'render', 'constructor'].includes(prop as string)) {
           return undefined
         }
-        if (prop === 'loading') {
-          return true
+
+        // proxy to properties that actually exist on LoadingStoreValue (_meta, $reload, etc.)
+        if (Reflect.has(target, prop)) {
+          return Reflect.get(target, prop)
         }
-        if (prop === 'load') {
-          return entityLoaded
-        }
-        if (prop === 'self') {
-          return absoluteSelf
-        }
-        if (prop === '_meta') {
-          // When _meta is requested on a LoadingStoreValue, we keep on using the unmodified promise, because
-          // ._meta.load is supposed to resolve to the whole object, not just the ._meta part of it
-          return new LoadingStoreValue(entityLoaded, absoluteSelf)
-        }
-        if (['$reload'].includes(prop)) {
-          // Skip reloading entities that are already loading
-          return () => entityLoaded
-        }
-        if (['$loadItems', '$post', '$patch', '$del'].includes(prop)) {
-          // It is important to call entity[prop] without first saving it into a variable, because saving to a
-          // variable would change the value of `this` inside the function
-          return (...args) => entityLoaded.then(entity => entity[prop](...args))
-        }
-        const propertyLoaded = entityLoaded.then(entity => entity[prop])
-        if (['items', 'allItems'].includes(prop)) {
-          return new LoadingStoreCollection(propertyLoaded)
-        }
-        // Normal property access: return a function that yields another LoadingStoreValue and renders as empty string
-        const result = templateParams => new LoadingStoreValue(propertyLoaded.then(property => property(templateParams)._meta.load))
-        result.loading = true
-        result.toString = () => ''
+
+        // Proxy to all other unknown properties: return a function that yields another LoadingStoreValue
+        const loadProperty = loadResourceSafely.then(resource => resource[prop])
+        const result = templateParams => new LoadingStoreValue(loadProperty.then(property => property(templateParams)._meta.load))
         return result
       }
     }
     return new Proxy(this, handler)
+  }
+
+  public toString (): string {
+    return ''
+  }
+
+  get items (): Array<Resource> {
+    return LoadingStoreCollection.create(this.loadResourceSafely.then(entity => entity.items))
+  }
+
+  get allItems (): Array<Resource> {
+    return LoadingStoreCollection.create(this.loadResourceSafely.then(entity => entity.allItems))
+  }
+
+  public $reload (): Promise<Resource> {
+    // Skip reloading entities that are already loading
+    return this._meta.load
+  }
+
+  public $loadItems (): Promise<Resource> {
+    return this._meta.load
+  }
+
+  public $post (data: unknown):Promise<Resource> {
+    return this._meta.load.then(resource => resource.$post(data))
+  }
+
+  public $patch (data: unknown): Promise<Resource> {
+    return this._meta.load.then(resource => resource.$patch(data))
+  }
+
+  public $del (): Promise<string | void> {
+    return this._meta.load.then(resource => resource.$del())
   }
 }
 
