@@ -11,7 +11,7 @@ class ResourceCreator<RootEndpoint extends ResourceInterface = ResourceInterface
   private config: InternalConfig
   private apiActions: ApiActions<RootEndpoint>
 
-  constructor ({ get, reload, post, patch, href, del, isUnknown }: ApiActions, config: InternalConfig = {}) {
+  constructor({ get, reload, post, patch, href, del, isUnknown }: ApiActions, config: InternalConfig = {}) {
     this.apiActions = { get, reload, post, patch, href, del, isUnknown }
     this.config = config
   }
@@ -43,7 +43,7 @@ class ResourceCreator<RootEndpoint extends ResourceInterface = ResourceInterface
    * @param data                entity data from the Vuex store
    * @returns object            wrapped entity ready for use in a frontend component
    */
-  wrap<ResourceType extends ResourceInterface> (data: StoreData<ResourceType>): ResourceType {
+  wrap<ResourceType extends ResourceInterface>(data: StoreData<ResourceType>): ResourceType {
     const meta = data._meta || { load: Promise.resolve(), loading: false }
 
     // Resource is loading --> return LoadingResource
@@ -51,18 +51,18 @@ class ResourceCreator<RootEndpoint extends ResourceInterface = ResourceInterface
       const loadResource = (meta.load as Promise<StoreData<ResourceType>>).then(storeData => this.wrapData<ResourceType>(storeData))
       return new LoadingResource<ResourceType>(loadResource, meta.self, this.config) as unknown as ResourceType
 
-    // Resource is not loading --> wrap actual data
+      // Resource is not loading --> wrap actual data
     } else {
       return this.wrapData<ResourceType>(data)
     }
   }
 
-  wrapData<ResourceType extends ResourceInterface<ResourceType>> (data: StoreData<ResourceType>): ResourceType {
+  wrapData<ResourceType extends ResourceInterface<ResourceType>>(data: StoreData<ResourceType>): ResourceType {
     // Store data looks like a collection --> return CollectionInterface
     if (isCollection<ResourceType>(data)) {
       return new Collection<ResourceType>(data, this.apiActions, this, this.config) as unknown as ResourceType
 
-    // else Store Data looks like an entity --> return normal Resource
+      // else Store Data looks like an entity --> return normal Resource
     } else {
       return new Resource<ResourceType>(data, this.apiActions, this, this.config) as unknown as ResourceType
     }
