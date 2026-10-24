@@ -20,6 +20,7 @@
     "lint": "cross-env eslint src tests --ext .js,.ts",
     "test": "vitest",
     "test:debug": "node --inspect-brk ./node_modules/.bin/jest -i",
+    "prepare": "npm run build",
     "version": "npm run build"
   },
   "engines": {
